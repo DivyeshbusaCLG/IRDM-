@@ -1,0 +1,89 @@
+import csv
+import math
+from collections import defaultdict, Counter
+
+# ------------ Data Loading ------------ #
+def load_documents(file_path):
+    documents = {}
+    with open(file_path, 'r', encoding='utf-8') as f:
+        reader = csv.reader(f, delimiter=';')
+        for row in reader:
+            doc_id, stemmed_content = row[0], row[1].split()
+            documents[doc_id] = stemmed_content
+    return documents
+
+def load_queries(file_path):
+    queries = {}
+    with open(file_path, 'r', encoding='utf-8') as f:
+        reader = csv.reader(f, delimiter=';')
+        for row in reader:
+            query_id, stemmed_query = row[0], row[1].split()
+            queries[query_id] = stemmed_query
+    return queries
+
+def load_assessments(file_path):
+    relevance = defaultdict(set)
+    with open(file_path, 'r', encoding='utf-8') as f:
+        reader = csv.reader(f, delimiter=';')
+        for row in reader:
+            query_id, doc_id = row[0], row[1]
+            relevance[query_id].add(doc_id)
+    return relevance
+
+# ------------ TF-IDF Scorer ------------ #
+def compute_idf(documents):
+    df = defaultdict(int)
+    N = len(documents)
+    for content in documents.values():
+        unique_terms = set(content)
+        for term in unique_terms:
+            df[term] += 1
+    idf = {term: math.log((N + 1) / (df_t + 1)) for term, df_t in df.items()}
+    return idf
+
+def tfidf_score(query, doc, idf):
+    tf = Counter(doc)
+    doc_len = len(doc)
+    return sum((tf[t] / doc_len) * idf.get(t, 0) for t in query)
+
+def rank_documents(query, documents, idf):
+    return sorted(
+        ((doc_id, tfidf_score(query, doc, idf)) for doc_id, doc in documents.items()),
+        key=lambda x: x[1],
+        reverse=True
+    )
+
+# ------------ Evaluation ------------ #
+def precision_recall_at_k(ranked_docs, relevant_docs, k):
+    retrieved = [doc_id for doc_id, _ in ranked_docs[:k]]
+    relevant_retrieved = [d for d in retrieved if d in relevant_docs]
+    precision = len(relevant_retrieved) / k
+    recall = len(relevant_retrieved) / len(relevant_docs) if relevant_docs else 0.0
+    return precision, recall
+
+def evaluate(queries, documents, relevance, idf, k):
+    total_precision = 0.0
+    total_recall = 0.0
+    num_queries = len(queries)
+
+    for qid, query in queries.items():
+        ranked = rank_documents(query, documents, idf)
+        precision, recall = precision_recall_at_k(ranked, relevance[qid], k)
+        total_precision += precision
+        total_recall += recall
+
+    avg_precision = total_precision / num_queries
+    avg_recall = total_recall / num_queries
+    return avg_precision, avg_recall
+
+# ------------ Main ------------ #
+if __name__ == '__main__':
+    documents = load_documents('/Users/busa/Downloads/IRDM/Code/queries.csv')
+    queries = load_queries('/Users/busa/Downloads/IRDM/Code/queries.csv')
+    relevance = load_assessments('/Users/busa/Downloads/IRDM/Code/assessments.csv')
+
+    idf = compute_idf(documents)
+    
+    for k in [5, 10, 20]:
+        avg_p, avg_r = evaluate(queries, documents, relevance, idf, k)
+        print(f"k={k} | Avg Precision: {avg_p:.4f}, Avg Recall: {avg_r:.4f}")
